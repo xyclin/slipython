@@ -31,7 +31,7 @@ def deserialize(s):
         obj = "<Unrecoverable Object>"
     return obj
 
-# 
+#
 
 objects_sql = """\
 CREATE TABLE IF NOT EXISTS objects (
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS names (
     """
 
 
-# Dbg - to get logging out to the screen for debugging... 
+# Dbg - to get logging out to the screen for debugging...
 import logging
 
 logging.basicConfig()
@@ -107,11 +107,11 @@ class NameSpaceStore:
         with self.conn:
             s = """\
                 SELECT name, object
-                FROM names JOIN objects 
+                FROM names JOIN objects
                 WHERE names.id=objects.id
                 """
             cur.execute(s)
-            new_ns = {vname: deserialize(vs) 
+            new_ns = {vname: deserialize(vs)
                       for vname, vs in cur.fetchall()}
         self.ns.update(new_ns)
         logger.info("Updated ns with keys: %s", sorted(new_ns.keys()))
@@ -150,14 +150,48 @@ class SLIPKernel(IPythonKernel):
 
     def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
-        
+
         #print("Keys:", list(self.shell.user_ns.keys())[:3]) # dbg
 
         self.ns_store.update_ns()
-        out = super().do_execute(code, silent, store_history,
-                                 user_expressions, allow_stdin)
+        out = do_execute_simple(code, self.shell.user_ns)
         self.ns_store.update()
         return out
+
+import ast
+
+# -> messaging reply dict
+def do_execute_simple(code, user_ns):
+    run_cell_simple(code, user_ns)
+    reply_content = {}
+    reply_content[u'status'] = u'ok'
+    reply_content['execution_count'] = 1 # XXX DUMMY
+    reply_content[u'user_expressions'] = {} # XXX unused but also dummy
+    return reply_content
+
+
+# -> ()
+def run_cell_simple(code, user_ns):
+    nodelist = ast.parse(code).body
+    nodes_exec, nodes_interactive = nodelist[:-1], nodelist[-1:]
+    bytecodes = []
+
+    for node in nodes_exec:
+        node = ast.Module([node])
+        bytecode = compile(node, '<string>', 'exec')
+        bytecodes.append(bytecode)
+
+    for node in nodes_interactive:
+        node = ast.Interactive([node])
+        bytecode = compile(node, '<string>', 'single')
+        bytecodes.append(bytecode)
+
+    for bytecode in bytecodes:
+        exec(bytecode, globals(), user_ns)
+
+
+
+
 
 
 if __name__ == '__main__':
